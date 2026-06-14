@@ -6,11 +6,11 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 
-def fetch_cluster_data(db_path: str) -> dict[int, list[str]]:
-    """Queries DuckDB and groups raw content text by their cluster_id."""
+def fetch_cluster_data(db_path: str) -> dict[int, list[dict]]:
+    """Queries DuckDB and groups source paths and content by cluster_id."""
     con = duckdb.connect(database=db_path, read_only=True)
     query = """
-        SELECT cluster_id, raw_content 
+        SELECT cluster_id, filepath, raw_content 
         FROM documents 
         WHERE cluster_id IS NOT NULL AND raw_content IS NOT NULL
     """
@@ -18,8 +18,11 @@ def fetch_cluster_data(db_path: str) -> dict[int, list[str]]:
     con.close()
 
     clusters = {}
-    for cluster_id, raw_content in results:
-        clusters.setdefault(cluster_id, []).append(raw_content)
+    for cluster_id, filepath, raw_content in results:
+        clusters.setdefault(cluster_id, []).append({
+            "filepath": filepath,
+            "content": raw_content
+        })
     return clusters
 
 
@@ -43,8 +46,10 @@ def extract_top_keywords(text_corpus: list[str], top_n: int = 3) -> list[str]:
         return ["semantic", "summary", "cluster"]
 
 
-def synthesize_canonical_content(raw_documents: list[str], num_sentences: int) -> tuple[str, str]:
-    """Generates a new markdown document and an alphanumeric title slug via semantic centroids."""
+def synthesize_canonical_content(sources: list[dict], num_sentences: int) -> tuple[str, str]:
+    """Generates a new markdown document with centroid-ranked sentences and source wikilinks."""
+    raw_documents = [s["content"] for s in sources]
+    
     # Step 1: Tokenize all source documents into a unified sentence pool
     sentence_pool = []
     for doc in raw_documents:
@@ -60,35 +65,34 @@ def synthesize_canonical_content(raw_documents: list[str], num_sentences: int) -
     title_slug = "_".join(keywords).lower().replace(" ", "_")
     title_slug = re.sub(r"[^a-z0-9_]", "", title_slug)
 
+    # Base text synthesis logic block
     if len(sentence_pool) <= num_sentences:
-        fallback_content = "\n\n".join(sentence_pool)
-        return fallback_content, title_slug
+        selected_sentences = sentence_pool
+    else:
+        # Step 2: Vectorize sentences using TF-IDF
+        vectorizer = TfidfVectorizer(stop_words="english")
+        sentence_vectors = vectorizer.fit_transform(sentence_pool)
+        
+        # Step 3: Compute the Global Cluster Centroid Vector
+        cluster_centroid = np.asarray(sentence_vectors.mean(axis=0))
 
-    # Step 2: Vectorize sentences using TF-IDF
-    vectorizer = TfidfVectorizer(stop_words="english")
-    sentence_vectors = vectorizer.fit_transform(sentence_pool)
-    
-    # Step 3: Compute the Global Cluster Centroid Vector
-    cluster_centroid = np.asarray(sentence_vectors.mean(axis=0))
+        # Step 4: Calculate Cosine Proximity to Centroid
+        sentence_norms = np.linalg.norm(sentence_vectors.toarray(), axis=1)
+        centroid_norm = np.linalg.norm(cluster_centroid)
 
-    # Step 4: Calculate Cosine Proximity to Centroid
-    sentence_norms = np.linalg.norm(sentence_vectors.toarray(), axis=1)
-    centroid_norm = np.linalg.norm(cluster_centroid)
+        if centroid_norm == 0:
+            selected_sentences = sentence_pool[:num_sentences]
+        else:
+            sentence_norms[sentence_norms == 0] = 1.0
+            dot_products = np.dot(sentence_vectors.toarray(), cluster_centroid.T).flatten()
+            similarities = dot_products / (sentence_norms * centroid_norm)
 
-    if centroid_norm == 0:
-        fallback_content = "\n\n".join(sentence_pool[:num_sentences])
-        return fallback_content, title_slug
+            # Step 5: Extract and order the top-ranking sentences chronologically
+            top_indices = similarities.argsort()[::-1][:num_sentences]
+            top_indices.sort()
+            selected_sentences = [sentence_pool[idx] for idx in top_indices]
 
-    sentence_norms[sentence_norms == 0] = 1.0
-    dot_products = np.dot(sentence_vectors.toarray(), cluster_centroid.T).flatten()
-    similarities = dot_products / (sentence_norms * centroid_norm)
-
-    # Step 5: Extract and order the top-ranking sentences
-    top_indices = similarities.argsort()[::-1][:num_sentences]
-    top_indices.sort()
-    selected_sentences = [sentence_pool[idx] for idx in top_indices]
-
-    # Step 6: Format as structured Markdown
+    # Step 6: Format structural Markdown output
     markdown_document = [
         f"# Authoritative Canonical Document: {title}",
         f"\n> **System Note:** This file was synthetically generated using a centroid-proximity vector model across cluster source components.",
@@ -96,14 +100,19 @@ def synthesize_canonical_content(raw_documents: list[str], num_sentences: int) -
     ]
 
     for sentence in selected_sentences:
-        markdown_document.append(f"{sentence}")
+        markdown_document.append(f"{sentence}\n")
+
+    # Step 7: Append references using standard Wikilink format
+    markdown_document.append("\n## Source References")
+    wikilinks = [f"* [[{Path(s['filepath']).name}]]" for s in sources]
+    markdown_document.append("\n".join(wikilinks))
 
     return "\n\n".join(markdown_document), title_slug
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Synthesize Authoritative Canonical Markdown Files with Title Slugs."
+        description="Synthesize Authoritative Canonical Markdown Files with Source Wikilinks."
     )
     parser.add_argument(
         "--db", type=str, default="markdown_analysis.db", help="DuckDB state cache database path."
@@ -128,11 +137,11 @@ def main() -> None:
     clusters = fetch_cluster_data(args.db)
 
     print(f"Synthesizing {len(clusters)} canonical documents...")
-    for cluster_id, raw_docs in clusters.items():
-        print(f" -> Processing Generation Phase for Cluster #{cluster_id} ({len(raw_docs)} source assets)...")
+    for cluster_id, sources in clusters.items():
+        print(f" -> Processing Generation Phase for Cluster #{cluster_id} ({len(sources)} source assets)...")
         
         # Unpack synthesized payload along with its generated clean title slug
-        synthetic_markdown, title_slug = synthesize_canonical_content(raw_docs, args.length)
+        synthetic_markdown, title_slug = synthesize_canonical_content(sources, args.length)
         
         # Construct explicit naming layout containing cluster identifier and title elements
         file_name = f"canonical_cluster_{cluster_id}_{title_slug}.md" if title_slug else f"canonical_cluster_{cluster_id}.md"

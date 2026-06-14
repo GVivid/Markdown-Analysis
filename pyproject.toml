@@ -1,5 +1,5 @@
 [project]
-name = "markdown-analysis"
+name = "Markdown-Analysis"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -10,4 +10,8 @@ dependencies = [
     "numpy>=1.24.0",
     "scipy>=1.11.0",
     "pyproject-toml>=0.1.0",
+    "networkx>=3.2.1",
+    "pyvis>=0.3.2",
+    "matplotlib>=3.9.4",
+    "pandas>=2.3.3",
 ]

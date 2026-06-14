@@ -14,16 +14,21 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 def clean_markdown(text: str) -> str:
-    """Strips basic markdown syntax to normalize textual payload."""
+    """Strips basic markdown syntax and handles multi-layer nested list markers."""
     # Remove markdown hyperlinks but retain the anchor text
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
+    
     # Strip markdown header syntax (e.g., #, ##) and subsequent whitespace
     text = re.sub(r"#+\s+", "", text)
-    # Remove text formatting characters including asterisks, underscores, backticks, and tildes
+    
+    # Clean multi-layered nested lists (handles single or multiple spaces/tabs preceding -, *, or +)
+    text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)
+    
+    # Remove remaining text formatting characters (asterisks, underscores, backticks, tildes)
     text = re.sub(r"[*_`~]+", "", text)
-    # Trim leading/trailing whitespace and cast the entire string to lowercase for normalization
+    
+    # Trim leading/trailing whitespace and cast to lowercase for normalization
     return text.strip().lower()
-
 
 def compute_md5(text: str) -> str:
     """Generates MD5 hash from normalized content for exact match filtering."""
