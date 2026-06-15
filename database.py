@@ -103,27 +103,27 @@ class DatabaseManager:
         if self.con:
             self.con.close()
 
-    def _assert_active_connection(self) -> None:
-        """Internal helper to ensure runtime operations contain an open connection."""
+    def setup_schema(self) -> None:
+        """Initializes structural table definitions for idempotent ingestion tracking."""
         assert self.con is not None, (
             "Database operation rejected: connection context closed or dead."
         )
-
-    def setup_schema(self) -> None:
-        """Initializes structural table definitions for idempotent ingestion tracking."""
-        self._assert_active_connection()
         self.con.execute(SQLQueries.CREATE_TABLE)
 
     def get_all_filepaths(self) -> list[str]:
         """Retrieves all tracked asset paths from the database."""
-        self._assert_active_connection()
+        assert self.con is not None, (
+            "Database operation rejected: connection context closed or dead."
+        )
         return [
             r[0] for r in self.con.execute(SQLQueries.SELECT_ALL_FILEPATHS).fetchall()
         ]
 
     def delete_by_filepath(self, filepath: str) -> None:
         """Purges an unlinked tracking row by its unique file system path identifier."""
-        self._assert_active_connection()
+        assert self.con is not None, (
+            "Database operation rejected: connection context closed or dead."
+        )
         assert filepath, (
             "Cannot execute file unlinking query with missing or empty path payload."
         )
@@ -131,7 +131,9 @@ class DatabaseManager:
 
     def get_mtime_by_filepath(self, filepath: str) -> Union[float, None]:
         """Fetches the cached modification time scalar for delta synchronization checks."""
-        self._assert_active_connection()
+        assert self.con is not None, (
+            "Database operation rejected: connection context closed or dead."
+        )
         assert filepath, "Invalid query target: source filepath parameter required."
         row = self.con.execute(
             SQLQueries.SELECT_MTIME_BY_FILEPATH, [filepath]
@@ -147,7 +149,9 @@ class DatabaseManager:
         mtime: float,
     ) -> None:
         """Executes an upsert mutation reset sequence on modified document files."""
-        self._assert_active_connection()
+        assert self.con is not None, (
+            "Database operation rejected: connection context closed or dead."
+        )
         assert filepath, (
             "Document tracking constraint violation: Target storage filepath parameter required."
         )
@@ -163,7 +167,9 @@ class DatabaseManager:
 
     def process_exact_duplicates(self) -> None:
         """Resolves structural base matches via raw MD5 matching and flags source targets."""
-        self._assert_active_connection()
+        assert self.con is not None, (
+            "Database operation rejected: connection context closed or dead."
+        )
         self.con.execute(SQLQueries.RESET_CANONICAL_FLAGS)
         hashes = self.con.execute(SQLQueries.SELECT_DISTINCT_MD5).fetchall()
 
@@ -180,12 +186,16 @@ class DatabaseManager:
 
     def get_canonical_documents(self) -> list[tuple[str, str]]:
         """Extracts text components of documents designated as unique exact matches."""
-        self._assert_active_connection()
+        assert self.con is not None, (
+            "Database operation rejected: connection context closed or dead."
+        )
         return self.con.execute(SQLQueries.SELECT_CANONICAL_DOCUMENTS).fetchall()
 
     def update_cluster_id(self, filepath: str, cluster_id: int) -> None:
         """Updates cluster identifier mappings across execution components."""
-        self._assert_active_connection()
+        assert self.con is not None, (
+            "Database operation rejected: connection context closed or dead."
+        )
         assert filepath, "Cluster serialization error: Path identifier cannot be empty."
         assert cluster_id >= -1, "Cluster structural index bounds exception."
 
@@ -195,7 +205,9 @@ class DatabaseManager:
         self, cluster_paths: list[str], canonical_path: str
     ) -> None:
         """Applies explicit Boolean flags establishing absolute canonical authority."""
-        self._assert_active_connection()
+        assert self.con is not None, (
+            "Database operation rejected: connection context closed or dead."
+        )
         assert cluster_paths, (
             "Consolidation batch list sequence must contain at least one string item."
         )
@@ -211,12 +223,16 @@ class DatabaseManager:
 
     def propagate_exact_duplicate_clusters(self) -> None:
         """Cascades parent cluster labels down to secondary physical exact copies."""
-        self._assert_active_connection()
+        assert self.con is not None, (
+            "Database operation rejected: connection context closed or dead."
+        )
         self.con.execute(SQLQueries.PROPAGATE_EXACT_DUPLICATE_CLUSTERS)
 
     def get_non_canonical_clustered(self) -> list[str]:
         """Identifies target file instances mapped for relocation or removal routines."""
-        self._assert_active_connection()
+        assert self.con is not None, (
+            "Database operation rejected: connection context closed or dead."
+        )
         return [
             r[0]
             for r in self.con.execute(
@@ -226,12 +242,16 @@ class DatabaseManager:
 
     def get_pipeline_report(self) -> list[tuple]:
         """Runs summary metrics capturing group data reduction stats."""
-        self._assert_active_connection()
+        assert self.con is not None, (
+            "Database operation rejected: connection context closed or dead."
+        )
         return self.con.execute(SQLQueries.PIPELINE_REDUCTION_REPORT).fetchall()
 
     def fetch_cluster_data(self) -> dict[int, list[dict]]:
         """Aggregates all cluster data structural models for payload generation tasks."""
-        self._assert_active_connection()
+        assert self.con is not None, (
+            "Database operation rejected: connection context closed or dead."
+        )
         results = self.con.execute(SQLQueries.FETCH_CLUSTER_DATA).fetchall()
 
         clusters = {}
